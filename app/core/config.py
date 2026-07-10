@@ -14,9 +14,18 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("CLOUDFLARE_API_TOKEN", "cloud-fare-api"),
     )
+    cloudflare_api_tokens: str = Field(
+        default="",
+        validation_alias=AliasChoices("CLOUDFLARE_API_TOKENS", "CLOUDFLARE_API_TOKEN"),
+        description="Comma separated list of API tokens for quota rotation"
+    )
     cloudflare_account_id: str = Field(
         default="",
         validation_alias=AliasChoices("CLOUDFLARE_ACCOUNT_ID", "cloud-fare-account"),
+    )
+    pollinations_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("POLLINATIONS_API_KEY"),
     )
     workers_ai_model: str = Field(
         default="@cf/black-forest-labs/flux-1-schnell",

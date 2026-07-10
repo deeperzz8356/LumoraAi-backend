@@ -16,7 +16,13 @@ class CloudflareProvider:
         settings = get_settings()
         model = request.model or settings.workers_ai_model
 
-        if not settings.cloudflare_api_token or not settings.cloudflare_account_id:
+        # Multi-key rotation logic for increasing free quota
+        raw_tokens = settings.cloudflare_api_tokens + "," + settings.cloudflare_api_token
+        tokens_list = list(set(t.strip() for t in raw_tokens.split(",") if t.strip()))
+        import random
+        active_token = random.choice(tokens_list) if tokens_list else ""
+
+        if not active_token or not settings.cloudflare_account_id:
             image_bytes = self._render_placeholder_svg(request.prompt, request.style)
             return GeneratedImage(image_bytes=image_bytes, mime_type="image/svg+xml", model=model)
 
@@ -27,14 +33,14 @@ class CloudflareProvider:
             if is_multipart:
                 response = await client.post(
                     url,
-                    headers={"Authorization": f"Bearer {settings.cloudflare_api_token}"},
+                    headers={"Authorization": f"Bearer {active_token}"},
                     files=payload,
                 )
             else:
                 response = await client.post(
                     url,
                     headers={
-                        "Authorization": f"Bearer {settings.cloudflare_api_token}",
+                        "Authorization": f"Bearer {active_token}",
                         "Content-Type": "application/json",
                     },
                     content=json.dumps(payload),

@@ -1,4 +1,4 @@
-from app.database.fake_store import store
+from app.database.firestore_repositories.user_repo import user_repo
 from firebase_admin import auth
 
 
@@ -15,6 +15,6 @@ async def verify_and_sync_user(id_token: str) -> dict:
     uid = decoded_token["uid"]
     
     # Sync user in the backend database
-    store.ensure_user(uid)
+    user_repo.ensure_user(uid, email=decoded_token.get("email"))
     
     return {"uid": uid, "email": decoded_token.get("email"), "decoded_token": decoded_token}
