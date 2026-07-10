@@ -10,6 +10,10 @@ class GuestLoginRequest(BaseModel):
     device_id: str | None = None
 
 
+class GoogleLoginRequest(BaseModel):
+    id_token: str
+
+
 class AuthResponse(BaseModel):
     status: str = "success"
     access_token: str

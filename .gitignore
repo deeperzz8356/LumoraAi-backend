@@ -3,3 +3,8 @@ __pycache__/
 **/__pycache__/
 .pytest_cache/
 .env
+firebase-credentials.json
+
+lumora-ai-58401-firebase-adminsdk-fbsvc-c398814ea8.json
+AI Generator UI.fig
+AI Generator UI.zip

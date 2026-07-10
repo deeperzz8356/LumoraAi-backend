@@ -1,14 +1,20 @@
 from app.database.fake_store import store
+from firebase_admin import auth
 
 
-async def login(email: str, password: str) -> dict:
-    user_id = f"user_{abs(hash(email)) % 10000:04d}"
-    store.ensure_user(user_id)
-    return {"access_token": f"demo-token-{user_id}", "user_id": user_id}
-
-
-async def guest_login(device_id: str | None = None) -> dict:
-    suffix = abs(hash(device_id or "guest")) % 10000
-    user_id = f"guest_{suffix:04d}"
-    store.ensure_user(user_id)
-    return {"access_token": f"guest-token-{user_id}", "user_id": user_id}
+async def verify_and_sync_user(id_token: str) -> dict:
+    """
+    Verifies the actual Firebase ID token provided by the frontend.
+    Syncs the user in the backend database.
+    """
+    if not id_token:
+        raise ValueError("ID Token cannot be empty")
+    
+    # This verifies the actual Firebase token
+    decoded_token = auth.verify_id_token(id_token)
+    uid = decoded_token["uid"]
+    
+    # Sync user in the backend database
+    store.ensure_user(uid)
+    
+    return {"uid": uid, "email": decoded_token.get("email"), "decoded_token": decoded_token}
