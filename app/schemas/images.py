@@ -10,6 +10,7 @@ class ImageGenerateRequest(BaseModel):
     steps: int | None = Field(default=None, ge=1, le=50)
     seed: int | None = Field(default=None, ge=0)
     style: str | None = Field(default=None, max_length=100)
+    source_image_b64: str | None = None
 
 
 class ImageGenerateResponse(BaseModel):

@@ -15,6 +15,8 @@ class CloudflareProvider:
     async def generate_image(self, request: ImageGenerateRequest) -> GeneratedImage:
         settings = get_settings()
         model = request.model or settings.workers_ai_model
+        if request.source_image_b64:
+            model = "@cf/runwayml/stable-diffusion-v1-5-img2img"
 
         # Multi-key rotation logic for increasing free quota
         raw_tokens = settings.cloudflare_api_tokens + "," + settings.cloudflare_api_token
@@ -57,6 +59,18 @@ class CloudflareProvider:
         return GeneratedImage(image_bytes=image_bytes, mime_type=mime_type, model=model)
 
     def _build_request_payload(self, request: ImageGenerateRequest, model: str) -> tuple[dict, bool]:
+        if request.source_image_b64 and model == "@cf/runwayml/stable-diffusion-v1-5-img2img":
+            image_bytes = self._decode_base64_image(request.source_image_b64)
+            files: dict[str, tuple[None | str, str | bytes]] = {
+                "prompt": (None, request.prompt),
+                "image": ("image.jpg", image_bytes)
+            }
+            if request.steps is not None:
+                files["steps"] = (None, str(request.steps))
+            if request.negative_prompt:
+                files["negative_prompt"] = (None, request.negative_prompt)
+            return files, True
+
         if model.startswith("@cf/black-forest-labs/flux-2"):
             files: dict[str, tuple[None, str]] = {
                 "prompt": (None, request.prompt),
