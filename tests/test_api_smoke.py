@@ -18,23 +18,17 @@ def test_templates():
     assert response.json()["status"] == "success"
 
 
-def test_auth_guest():
-    response = client.post("/api/v1/auth/guest", json={"device_id": "demo-device"})
-    assert response.status_code == 200
-    assert response.json()["status"] == "success"
-
-
-def test_auth_google():
+def test_auth_sync():
     with patch("app.services.auth_service.auth.verify_id_token") as mock_verify:
-        mock_verify.return_value = {"uid": "google_test_user_123"}
-        response = client.post("/api/v1/auth/google", json={"id_token": "mock-token-123"})
+        mock_verify.return_value = {"uid": "test_user_123", "email": "test@example.com"}
+        response = client.post("/api/v1/auth/sync", json={"id_token": "mock-token-123"})
         assert response.status_code == 200
         assert response.json()["status"] == "success"
-        assert response.json()["user_id"] == "google_test_user_123"
+        assert response.json()["user"]["uid"] == "test_user_123"
 
 
-def test_auth_login():
-    response = client.post("/api/v1/auth/login", json={"email": "test@example.com", "password": "password123"})
-    assert response.status_code == 200
-    assert response.json()["status"] == "success"
-    assert "access_token" in response.json()
+def test_auth_me_protected_unauthorized():
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 403
+
+
