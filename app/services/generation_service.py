@@ -21,7 +21,7 @@ async def generate_image(user_id: str, payload: dict) -> dict:
 
     # 2. Check & Deduct Credits
     if not credit_repo.deduct_credits(user_id, amount=1):
-        raise ValueError("Insufficient credits to generate image")
+        return {"status": "error", "message": "Insufficient credits to generate image"}
 
     # 3. Load Balance between Providers
     providers = ["cloudflare", "pollinations"]
@@ -53,7 +53,7 @@ async def generate_image(user_id: str, payload: dict) -> dict:
 async def generate_video(user_id: str, payload: dict) -> dict:
     # 1. Deduct Credits (Video generation uses 5 credits)
     if not credit_repo.deduct_credits(user_id, amount=5):
-        raise ValueError("Insufficient credits to generate video")
+        return {"status": "error", "message": "Insufficient credits to generate video"}
         
     # 2. Process Request
     prompt = payload.get("prompt", "")
@@ -64,7 +64,7 @@ async def generate_video(user_id: str, payload: dict) -> dict:
     
     if generated.get("status") == "error":
         # Refund credits if generation failed? For simplicity, we can just throw
-        raise ValueError(generated.get("message", "Video generation failed"))
+        return {"status": "error", "message": generated.get("message", "Video generation failed")}
         
     # 4. Log Analytics
     analytics_repo.log_generation(
