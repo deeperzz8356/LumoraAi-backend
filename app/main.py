@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.firebase import initialize_firebase_app
-from app.routers import auth, users, generation, images, videos, templates, discover, notifications, profile, settings, subscriptions, credits, upload
+from app.routers import auth, users, generation, images, videos, templates, notifications, profile, settings, subscriptions, credits, upload
 
 
 @asynccontextmanager
@@ -38,7 +38,6 @@ def create_app() -> FastAPI:
     app.include_router(images.router, prefix=f"{prefix}/images", tags=["images"])
     app.include_router(videos.router, prefix=f"{prefix}/videos", tags=["videos"])
     app.include_router(templates.router, prefix=f"{prefix}/templates", tags=["templates"])
-    app.include_router(discover.router, prefix=f"{prefix}/discover", tags=["discover"])
     app.include_router(notifications.router, prefix=f"{prefix}/notifications", tags=["notifications"])
     app.include_router(profile.router, prefix=f"{prefix}/profile", tags=["profile"])
     app.include_router(settings.router, prefix=f"{prefix}/settings", tags=["settings"])

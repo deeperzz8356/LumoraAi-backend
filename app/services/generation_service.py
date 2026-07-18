@@ -32,28 +32,15 @@ async def generate_image(user_id: str, payload: dict) -> dict:
     else:
         generated = await cloudflare_provider.generate_image(request_obj)
         
-    # 4. Upload to Firebase Storage
-    image_url = storage_service.upload_image(user_id, generated.image_bytes, generated.mime_type)
-    
-    # If storage fails (e.g. no bucket configured), fallback to Base64
-    if not image_url:
-        image_url = encode_data_url(generated.image_bytes, generated.mime_type)
+    # 4. Return Base64 Image
+    image_url = encode_data_url(generated.image_bytes, generated.mime_type)
 
-    # 5. Log Analytics & Save to Generations Repo
+    # 5. Log Analytics
     analytics_repo.log_generation(
         user_id=user_id,
         feature=f"text_to_image_style_{request_obj.style}" if request_obj.style else "text_to_image",
         provider=chosen_provider_name,
         prompt=request_obj.prompt
-    )
-    
-    generations_repo.save_generation(
-        user_id=user_id,
-        prompt=request_obj.prompt,
-        style=request_obj.style,
-        image_url=image_url,
-        provider=chosen_provider_name,
-        model=generated.model
     )
 
     return {

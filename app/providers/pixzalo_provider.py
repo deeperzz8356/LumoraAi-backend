@@ -12,6 +12,10 @@ class PixzaloProvider:
     async def generate_video(self, payload: dict) -> dict:
         prompt = payload.get("prompt", "A cinematic scene")
         engine = payload.get("model", "default")
+        duration = payload.get("duration", 10)
+        motion_strength = payload.get("motion_strength", 65)
+        camera_direction = payload.get("camera_direction")
+        source_image = payload.get("source_image_b64")
         
         # If no API key is provided, we return a mock response so the frontend still works
         # until the user configures their Render dashboard with the actual API key.
@@ -31,11 +35,19 @@ class PixzaloProvider:
         
         request_data = {
             "prompt": prompt,
-            "model": "create", # The user requested the "cpeate" (create) model
+            "model": "create", # The user requested the "create" model
             "parameters": {
-                "engine": engine
+                "engine": engine,
+                "duration": duration,
+                "motion": motion_strength
             }
         }
+        
+        if camera_direction:
+            request_data["parameters"]["camera"] = camera_direction
+            
+        if source_image:
+            request_data["image"] = source_image
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             try:
