@@ -237,7 +237,7 @@ class VertexAIProvider:
 
         raise RuntimeError("Vertex AI Veo response had neither video bytes nor URI")
 
-    async def _poll_video_operation(self, client: genai.Client, operation: types.GenerateVideosOperation):
+    async def _poll_video_operation(self, client: genai.Client, operation: Any):
         settings = get_settings()
         attempts = max(1, settings.vertex_video_poll_attempts)
         delay = max(1, settings.vertex_video_poll_seconds)

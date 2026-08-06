@@ -387,8 +387,8 @@ class VertexAIVideoProvider:
     async def _poll_video_operation(
         self,
         client: genai.Client,
-        operation: types.GenerateVideosOperation,
-    ) -> types.GenerateVideosOperation:
+        operation: Any,
+    ) -> Any:
         """
         Poll a video generation operation until complete.
         
