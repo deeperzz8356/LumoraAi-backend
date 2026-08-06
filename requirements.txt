@@ -8,8 +8,8 @@ python-jose[cryptography]==3.3.0
 python-multipart==0.0.9
 pytest==8.3.2
 pytest-asyncio==0.23.8
-anyio[trio]==4.4.0
-google-genai>=1.51.0,<3
+anyio[trio]>=4.8.0,<5.0.0
+google-genai==1.51.0
 google-auth>=2.0.0
 google-cloud-aiplatform>=1.70.0
 google-cloud-storage>=2.13.0
