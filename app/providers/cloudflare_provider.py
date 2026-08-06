@@ -1,3 +1,10 @@
+"""
+Legacy Cloudflare Workers AI image provider.
+
+Image/video generation now uses Vertex AI (see vertex_ai_provider.py).
+This module is kept only for optional fallback experiments.
+"""
+
 from __future__ import annotations
 
 import base64
@@ -135,8 +142,3 @@ class CloudflareProvider:
   <text x='120' y='640' fill='#e2e8f0' font-size='28' font-family='Arial, Helvetica, sans-serif'>{safe_style}</text>
 </svg>"""
         return svg.encode("utf-8")
-
-
-def encode_data_url(image_bytes: bytes, mime_type: str) -> str:
-    encoded = base64.b64encode(image_bytes).decode("ascii")
-    return f"data:{mime_type};base64,{encoded}"

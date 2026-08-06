@@ -1,4 +1,5 @@
 from app.database.firestore_repositories.user_repo import user_repo
+from app.services.billing_service import billing_service
 from firebase_admin import auth
 
 
@@ -16,5 +17,11 @@ async def verify_and_sync_user(id_token: str) -> dict:
     
     # Sync user in the backend database
     user_repo.ensure_user(uid, email=decoded_token.get("email"))
+    bonus = billing_service.apply_signup_bonus(uid)
     
-    return {"uid": uid, "email": decoded_token.get("email"), "decoded_token": decoded_token}
+    return {
+        "uid": uid,
+        "email": decoded_token.get("email"),
+        "decoded_token": decoded_token,
+        "signup_bonus_credits": bonus,
+    }
