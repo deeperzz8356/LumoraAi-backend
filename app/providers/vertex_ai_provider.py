@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from google import genai
 from google.genai import types
-from google.oauth2 import service_account
-from google.auth import load_credentials_from_file
 
 from app.core.config import get_settings
+from app.core.credentials import load_google_credentials
 from app.providers.media_utils import (
     clamp_veo_duration,
     closest_aspect_ratio,
@@ -23,25 +22,6 @@ from app.services.ai_provider import GeneratedImage
 
 logger = logging.getLogger(__name__)
 
-_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
-_BACKEND_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _resolve_credentials_path(raw_path: str) -> str:
-    path = Path(raw_path)
-    if path.is_file():
-        return str(path.resolve())
-    candidate = _BACKEND_ROOT / raw_path
-    if candidate.is_file():
-        return str(candidate.resolve())
-    # Also try stripping a leading ./
-    candidate = _BACKEND_ROOT / Path(raw_path).name
-    if candidate.is_file():
-        return str(candidate.resolve())
-    raise FileNotFoundError(
-        f"Vertex AI credentials file not found: {raw_path!r} (looked under {_BACKEND_ROOT})"
-    )
-
 
 @lru_cache
 def _build_client() -> genai.Client:
@@ -52,20 +32,11 @@ def _build_client() -> genai.Client:
         )
 
     credentials = None
-    if settings.google_application_credentials:
-        creds_path = _resolve_credentials_path(settings.google_application_credentials)
-        try:
-            # Try to load as service account first
-            credentials = service_account.Credentials.from_service_account_file(
-                creds_path,
-                scopes=_SCOPES,
-            )
-        except Exception as e:
-            # If that fails, let google-auth handle ADC (authorized_user format)
-            # This will use the credentials file as ADC
-            logger.info(f"Not a service account file, using as ADC credentials: {e}")
-            from google.auth import load_credentials_from_file
-            credentials, _ = load_credentials_from_file(creds_path, scopes=_SCOPES)
+    if settings.google_application_credentials or os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"):
+        credentials = load_google_credentials(
+            file_path=settings.google_application_credentials,
+            json_env_name="GOOGLE_APPLICATION_CREDENTIALS_JSON",
+        )
 
     return genai.Client(
         vertexai=True,
@@ -84,23 +55,15 @@ def _build_image_client() -> genai.Client:
         )
 
     credentials = None
-    
-    # Use image_generation_credentials if available, otherwise fall back to default
     creds_path_to_use = settings.image_generation_credentials or settings.google_application_credentials
-    
-    if creds_path_to_use:
-        creds_path = _resolve_credentials_path(creds_path_to_use)
-        try:
-            # Try to load as service account first
-            credentials = service_account.Credentials.from_service_account_file(
-                creds_path,
-                scopes=_SCOPES,
-            )
-            logger.info(f"Loaded image generation credentials from service account: {creds_path}")
-        except Exception as e:
-            # If that fails, let google-auth handle ADC (authorized_user format)
-            logger.info(f"Not a service account file, using as ADC credentials: {e}")
-            credentials, _ = load_credentials_from_file(creds_path, scopes=_SCOPES)
+    if creds_path_to_use or os.getenv("IMAGE_GENERATION_CREDENTIALS_JSON") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"):
+        credentials = load_google_credentials(
+            file_path=creds_path_to_use,
+            json_env_name="IMAGE_GENERATION_CREDENTIALS_JSON"
+            if os.getenv("IMAGE_GENERATION_CREDENTIALS_JSON")
+            else "GOOGLE_APPLICATION_CREDENTIALS_JSON",
+        )
+        logger.info("Loaded image generation credentials from env or file")
 
     return genai.Client(
         vertexai=True,
