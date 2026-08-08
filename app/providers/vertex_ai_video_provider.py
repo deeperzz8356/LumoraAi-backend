@@ -14,10 +14,9 @@ from typing import Any, Optional
 
 from google import genai
 from google.genai import types
-from google.oauth2 import service_account
-from google.auth import load_credentials_from_file
 
 from app.core.config import get_settings
+from app.core.credentials import load_vertex_credentials_from_settings
 from app.providers.gcs_utils import download_video_from_gcs, parse_gcs_uri
 from app.providers.media_utils import clamp_veo_duration, decode_base64_payload, encode_data_url
 from app.providers.video_stitch import (
@@ -31,29 +30,6 @@ from app.providers.video_stitch import (
 
 logger = logging.getLogger(__name__)
 
-_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
-
-
-def _resolve_credentials_path(raw_path: str) -> str:
-    """Resolve credentials file path."""
-    from pathlib import Path
-    
-    backend_root = Path(__file__).resolve().parents[2]
-    path = Path(raw_path)
-    
-    if path.is_file():
-        return str(path.resolve())
-    candidate = backend_root / raw_path
-    if candidate.is_file():
-        return str(candidate.resolve())
-    candidate = backend_root / Path(raw_path).name
-    if candidate.is_file():
-        return str(candidate.resolve())
-    
-    raise FileNotFoundError(
-        f"Vertex AI credentials file not found: {raw_path!r} (looked under {backend_root})"
-    )
-
 
 def _build_client() -> genai.Client:
     """Build Vertex AI client."""
@@ -63,19 +39,7 @@ def _build_client() -> genai.Client:
             "GOOGLE_CLOUD_PROJECT is not configured. Set it in backend/.env to use Vertex AI."
         )
 
-    credentials = None
-    if settings.google_application_credentials:
-        creds_path = _resolve_credentials_path(settings.google_application_credentials)
-        try:
-            # Try to load as service account first
-            credentials = service_account.Credentials.from_service_account_file(
-                creds_path,
-                scopes=_SCOPES,
-            )
-        except Exception as e:
-            # If that fails, let google-auth handle ADC (authorized_user format)
-            logger.info(f"Not a service account file, using as ADC credentials: {e}")
-            credentials, _ = load_credentials_from_file(creds_path, scopes=_SCOPES)
+    credentials = load_vertex_credentials_from_settings()
 
     return genai.Client(
         vertexai=True,

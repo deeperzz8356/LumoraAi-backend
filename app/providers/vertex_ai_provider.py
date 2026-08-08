@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from functools import lru_cache
 from typing import Any
 
@@ -10,7 +9,7 @@ from google import genai
 from google.genai import types
 
 from app.core.config import get_settings
-from app.core.credentials import load_google_credentials
+from app.core.credentials import load_vertex_credentials_from_settings
 from app.providers.media_utils import (
     clamp_veo_duration,
     closest_aspect_ratio,
@@ -31,12 +30,7 @@ def _build_client() -> genai.Client:
             "GOOGLE_CLOUD_PROJECT is not configured. Set it in backend/.env to use Vertex AI."
         )
 
-    credentials = None
-    if settings.google_application_credentials or os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"):
-        credentials = load_google_credentials(
-            file_path=settings.google_application_credentials,
-            json_env_name="GOOGLE_APPLICATION_CREDENTIALS_JSON",
-        )
+    credentials = load_vertex_credentials_from_settings()
 
     return genai.Client(
         vertexai=True,
@@ -54,16 +48,8 @@ def _build_image_client() -> genai.Client:
             "GOOGLE_CLOUD_PROJECT is not configured. Set it in backend/.env to use Vertex AI."
         )
 
-    credentials = None
-    creds_path_to_use = settings.image_generation_credentials or settings.google_application_credentials
-    if creds_path_to_use or os.getenv("IMAGE_GENERATION_CREDENTIALS_JSON") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"):
-        credentials = load_google_credentials(
-            file_path=creds_path_to_use,
-            json_env_name="IMAGE_GENERATION_CREDENTIALS_JSON"
-            if os.getenv("IMAGE_GENERATION_CREDENTIALS_JSON")
-            else "GOOGLE_APPLICATION_CREDENTIALS_JSON",
-        )
-        logger.info("Loaded image generation credentials from env or file")
+    credentials = load_vertex_credentials_from_settings()
+    logger.info("Loaded image generation credentials from env or file")
 
     return genai.Client(
         vertexai=True,

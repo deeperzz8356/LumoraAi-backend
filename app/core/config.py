@@ -93,12 +93,13 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     settings = Settings()
     updates: dict[str, str] = {}
-    # Prefer explicit Vertex credentials; otherwise reuse the Firebase SA JSON when present.
-    if not settings.google_application_credentials and settings.firebase_credentials_path:
-        updates["google_application_credentials"] = settings.firebase_credentials_path
-    if not settings.google_cloud_project and settings.firebase_project_id:
-        updates["google_cloud_project"] = settings.firebase_project_id
-    if not settings.vertex_video_output_gcs_uri and settings.firebase_storage_bucket:
+    # Local dev only: default Veo output bucket from Firebase storage when not configured.
+    # Never map Firebase credentials or project to Vertex — they are different GCP projects.
+    if (
+        settings.app_env == "development"
+        and not settings.vertex_video_output_gcs_uri
+        and settings.firebase_storage_bucket
+    ):
         updates["vertex_video_output_gcs_uri"] = (
             f"gs://{settings.firebase_storage_bucket}/veo-outputs"
         )

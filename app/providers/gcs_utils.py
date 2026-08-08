@@ -10,12 +10,11 @@ from pathlib import Path
 from typing import Optional
 
 from google.cloud import storage
-from google.oauth2 import service_account
-from google.auth import load_credentials_from_file
+
+from app.core.credentials import load_vertex_credentials_from_settings
+
 
 logger = logging.getLogger(__name__)
-
-_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
 
 
 def parse_gcs_uri(gcs_uri: str) -> tuple[str, str]:
@@ -35,29 +34,7 @@ def parse_gcs_uri(gcs_uri: str) -> tuple[str, str]:
 
 
 def _build_storage_client(project_id: str, credentials_path: Optional[str] = None) -> storage.Client:
-    """
-    Build a Google Cloud Storage client.
-    
-    Args:
-        project_id: GCP project ID
-        credentials_path: Optional path to service account JSON credentials
-        
-    Returns:
-        Initialized storage.Client
-    """
-    credentials = None
-    if credentials_path:
-        try:
-            # Try to load as service account first
-            credentials = service_account.Credentials.from_service_account_file(
-                credentials_path,
-                scopes=_SCOPES,
-            )
-        except Exception as e:
-            # If that fails, load as ADC (authorized_user format)
-            logger.info(f"Not a service account file, using as ADC credentials: {e}")
-            credentials, _ = load_credentials_from_file(credentials_path, scopes=_SCOPES)
-    
+    credentials = load_vertex_credentials_from_settings()
     return storage.Client(project=project_id, credentials=credentials)
 
 

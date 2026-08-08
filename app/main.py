@@ -4,12 +4,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.credentials import ensure_vertex_credentials_env
 from app.core.firebase import initialize_firebase_app
 from app.routers import auth, users, generation, images, videos, templates, notifications, profile, settings, subscriptions, credits, upload
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    ensure_vertex_credentials_env()
     initialize_firebase_app()
     yield
 
