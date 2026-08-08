@@ -1,6 +1,21 @@
 from __future__ import annotations
 
 import base64
+import logging
+import re
+
+logger = logging.getLogger(__name__)
+
+_VEO_MODEL_ALIASES: dict[str, str] = {
+    "veo-1 ultra": "veo-3.1-generate-001",
+    "veo-1": "veo-3.1-generate-001",
+    "veo ultra": "veo-3.1-generate-001",
+    "fastdraft": "veo-3.1-fast-generate-001",
+    "fast draft": "veo-3.1-fast-generate-001",
+    "veo fast": "veo-3.1-fast-generate-001",
+}
+
+_VALID_VEO_MODEL = re.compile(r"^veo-[\w.-]+$", re.IGNORECASE)
 
 
 def encode_data_url(data: bytes, mime_type: str) -> str:
@@ -32,3 +47,21 @@ def clamp_veo_duration(seconds: int, model: str) -> int:
     """Map requested duration to a Veo-supported value."""
     allowed = (4, 6, 8) if "veo-3" in model else (5, 6, 7, 8)
     return min(allowed, key=lambda value: abs(value - max(1, seconds)))
+
+
+def resolve_veo_model(model: str | None, default: str) -> str:
+    """Map UI labels and aliases to a Vertex AI Veo model id."""
+    if not model or not model.strip():
+        return default
+
+    candidate = model.strip()
+    alias = _VEO_MODEL_ALIASES.get(candidate.lower())
+    if alias:
+        logger.info("Resolved video model alias %r -> %r", candidate, alias)
+        return alias
+
+    if _VALID_VEO_MODEL.match(candidate):
+        return candidate
+
+    logger.warning("Unknown video model %r; using default %r", candidate, default)
+    return default

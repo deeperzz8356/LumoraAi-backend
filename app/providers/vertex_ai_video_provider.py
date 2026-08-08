@@ -18,7 +18,7 @@ from google.genai import types
 from app.core.config import get_settings
 from app.core.credentials import load_vertex_credentials_from_settings
 from app.providers.gcs_utils import download_video_from_gcs, parse_gcs_uri
-from app.providers.media_utils import clamp_veo_duration, decode_base64_payload, encode_data_url
+from app.providers.media_utils import clamp_veo_duration, decode_base64_payload, encode_data_url, resolve_veo_model
 from app.providers.video_stitch import (
     calculate_video_scenes,
     cleanup_video_files,
@@ -84,7 +84,7 @@ class VertexAIVideoProvider:
             }
         """
         settings = get_settings()
-        model = payload.get("model") or settings.vertex_video_model
+        model = resolve_veo_model(payload.get("model"), settings.vertex_video_model)
         prompt = payload.get("prompt") or ""
         aspect_ratio = payload.get("aspect_ratio") or "16:9"
         duration = clamp_veo_duration(int(payload.get("duration") or 8), model)
