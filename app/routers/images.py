@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Header
 import uuid
 
+from app.core.dev_mode import is_developer_mode_header
 from app.schemas.images import ImageGenerateRequest, ImageGenerateResponse
 from app.services.generation_service import generate_image
 
@@ -8,17 +9,24 @@ router = APIRouter()
 
 
 @router.post("/generate", response_model=ImageGenerateResponse)
-async def images_generate_route(body: ImageGenerateRequest, x_user_id: str = Header(default="demo-user")):
+async def images_generate_route(
+    body: ImageGenerateRequest,
+    x_user_id: str = Header(default="demo-user"),
+    x_developer_mode: str | None = Header(default=None),
+):
     """
     Generate an image using gemini-2.5-flash-image model.
     
     Costs 1 credit per image.
     Uses modern Vertex AI unified SDK pattern (generate_content with response_modalities).
     """
-    result = await generate_image(x_user_id, body.model_dump())
+    result = await generate_image(
+        x_user_id,
+        body.model_dump(),
+        developer_mode=is_developer_mode_header(x_developer_mode),
+    )
     
     if result.get("status") == "error":
-        # Return error response
         return ImageGenerateResponse(
             status="error",
             jobId=str(uuid.uuid4()),
@@ -27,6 +35,7 @@ async def images_generate_route(body: ImageGenerateRequest, x_user_id: str = Hea
             model=body.model or "gemini-2.5-flash-image",
             imageUrl="",
             mimeType="image/png",
+            message=result.get("message", "Image generation failed"),
         )
     
     return ImageGenerateResponse(

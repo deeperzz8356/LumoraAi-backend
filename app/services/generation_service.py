@@ -13,12 +13,12 @@ image_provider = VertexAIProvider()
 video_provider = VertexAIVideoProvider()
 
 
-async def generate_image(user_id: str, payload: dict) -> dict:
+async def generate_image(user_id: str, payload: dict, *, developer_mode: bool = False) -> dict:
     request_obj = ImageGenerateRequest(**payload)
     if request_obj.style:
         request_obj.prompt = f"{request_obj.prompt}, in {request_obj.style} style"
 
-    if not credit_repo.deduct_credits(user_id, amount=1):
+    if not developer_mode and not credit_repo.deduct_credits(user_id, amount=1):
         return {"status": "error", "message": "Insufficient credits to generate image"}
 
     try:
@@ -48,10 +48,10 @@ async def generate_image(user_id: str, payload: dict) -> dict:
     }
 
 
-async def generate_video(user_id: str, payload: dict) -> dict:
+async def generate_video(user_id: str, payload: dict, *, developer_mode: bool = False) -> dict:
     """Generate a single 8-second video."""
     # Single video generation is cheaper (5 credits)
-    if not credit_repo.deduct_credits(user_id, amount=5):
+    if not developer_mode and not credit_repo.deduct_credits(user_id, amount=5):
         return {"status": "error", "message": "Insufficient credits to generate video"}
 
     prompt = payload.get("prompt", "")

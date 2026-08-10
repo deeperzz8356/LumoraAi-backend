@@ -21,3 +21,4 @@ class ImageGenerateResponse(BaseModel):
     model: str
     imageUrl: str
     mimeType: str = "image/svg+xml"
+    message: str | None = None
