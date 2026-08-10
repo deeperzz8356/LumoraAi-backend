@@ -123,42 +123,25 @@ class VertexAIVideoProvider:
             if operation.error:
                 raise RuntimeError(f"Vertex AI Veo failed: {operation.error}")
 
+            payload = await self._resolve_completed_video(
+                operation=operation,
+                settings=settings,
+                model=model,
+                duration=duration,
+            )
+            if payload is not None:
+                return payload
+
             result = operation.result or operation.response
-            videos = getattr(result, "generated_videos", None) if result else None
-            
-            if not videos:
-                raise RuntimeError("Vertex AI Veo returned no videos")
-
-            video = videos[0].video
-            if not video:
-                raise RuntimeError("Vertex AI Veo response missing video payload")
-
-            # Handle video bytes (in-memory)
-            if video.video_bytes:
-                mime_type = video.mime_type or "video/mp4"
-                return {
-                    "status": "success",
-                    "video_url": encode_data_url(video.video_bytes, mime_type),
-                    "model": model,
-                    "provider": "vertex-ai",
-                    "duration": float(duration),
-                }
-
-            # Handle GCS URI (download to local)
-            if video.uri:
-                local_path = await self._download_video_from_gcs(video.uri)
-                video_duration = await get_video_duration(local_path)
-                
-                return {
-                    "status": "success",
-                    "video_url": encode_data_url(Path(local_path).read_bytes(), "video/mp4"),
-                    "local_path": local_path,
-                    "model": model,
-                    "provider": "vertex-ai",
-                    "duration": video_duration,
-                }
-
-            raise RuntimeError("Vertex AI Veo response had neither video bytes nor URI")
+            logger.error(
+                "Vertex AI Veo completed without video artifacts. operation=%s result=%r",
+                getattr(operation, "name", "unknown"),
+                result,
+            )
+            raise RuntimeError(
+                "Vertex AI Veo returned no videos. The job finished but produced no output — "
+                "try a simpler prompt, switch to FastDraft, or retry in a moment."
+            )
             
         except Exception as e:
             logger.error(f"Single video generation failed: {e}")
@@ -309,6 +292,102 @@ class VertexAIVideoProvider:
                 "message": str(e),
                 "provider": "vertex-ai",
             }
+
+    async def _resolve_completed_video(
+        self,
+        *,
+        operation: Any,
+        settings: Any,
+        model: str,
+        duration: int,
+    ) -> Optional[dict]:
+        """Resolve inline bytes or GCS URI from a completed Veo operation."""
+        result = operation.result or operation.response
+        videos = getattr(result, "generated_videos", None) if result else None
+
+        if videos:
+            video = videos[0].video
+            if not video:
+                raise RuntimeError("Vertex AI Veo response missing video payload")
+
+            if video.video_bytes:
+                mime_type = video.mime_type or "video/mp4"
+                return {
+                    "status": "success",
+                    "video_url": encode_data_url(video.video_bytes, mime_type),
+                    "model": model,
+                    "provider": "vertex-ai",
+                    "duration": float(duration),
+                }
+
+            if video.uri:
+                return await self._video_result_from_gcs_uri(
+                    video.uri,
+                    model=model,
+                    duration=duration,
+                )
+
+            raise RuntimeError("Vertex AI Veo response had neither video bytes nor URI")
+
+        if settings.vertex_video_output_gcs_uri:
+            gcs_uri = await self._find_latest_gcs_video(settings)
+            if gcs_uri:
+                logger.info("Recovered Veo output from GCS fallback: %s", gcs_uri)
+                return await self._video_result_from_gcs_uri(
+                    gcs_uri,
+                    model=model,
+                    duration=duration,
+                )
+
+        return None
+
+    async def _video_result_from_gcs_uri(
+        self,
+        gcs_uri: str,
+        *,
+        model: str,
+        duration: int,
+    ) -> dict:
+        local_path = await self._download_video_from_gcs(gcs_uri)
+        video_duration = await get_video_duration(local_path)
+        return {
+            "status": "success",
+            "video_url": encode_data_url(Path(local_path).read_bytes(), "video/mp4"),
+            "local_path": local_path,
+            "model": model,
+            "provider": "vertex-ai",
+            "duration": video_duration,
+        }
+
+    async def _find_latest_gcs_video(self, settings: Any) -> Optional[str]:
+        """Pick the newest video object under the configured Veo output prefix."""
+        gcs_folder = settings.vertex_video_output_gcs_uri.rstrip("/") + "/"
+        try:
+            from google.cloud import storage
+
+            bucket_name, folder_path = parse_gcs_uri(gcs_folder)
+
+            def _latest_uri() -> Optional[str]:
+                client = storage.Client(
+                    project=settings.google_cloud_project,
+                    credentials=load_vertex_credentials_from_settings(),
+                )
+                bucket = client.bucket(bucket_name)
+                latest_blob = None
+                for blob in bucket.list_blobs(prefix=folder_path):
+                    if not blob.name.lower().endswith((".mp4", ".webm", ".mov")):
+                        continue
+                    if latest_blob is None or blob.updated > latest_blob.updated:
+                        latest_blob = blob
+                if latest_blob is None:
+                    return None
+                return f"gs://{bucket_name}/{latest_blob.name}"
+
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _latest_uri)
+        except Exception as exc:
+            logger.warning("GCS fallback lookup failed for %s: %s", gcs_folder, exc)
+            return None
 
     async def _download_video_from_gcs(self, gcs_uri: str) -> str:
         """
