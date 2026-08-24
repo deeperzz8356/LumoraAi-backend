@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     firebase_credentials_path: str = ""
     firebase_storage_bucket: str = ""
     fcm_enabled: bool = True
+    revenuecat_webhook_auth_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("REVENUECAT_WEBHOOK_AUTH_KEY"),
+    )
 
 
 @lru_cache
