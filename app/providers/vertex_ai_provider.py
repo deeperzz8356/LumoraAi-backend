@@ -85,13 +85,18 @@ class VertexAIProvider:
             "image_config": types.ImageConfig(**image_config_kwargs),
         }
 
+        contents: list[Any] = [request.prompt]
+        if request.source_image_b64:
+            image_bytes = decode_base64_payload(request.source_image_b64)
+            contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
+
         # Use dedicated image generation client
         client = _build_image_client()
         
         try:
             response = await client.aio.models.generate_content(
                 model=model,
-                contents=request.prompt,
+                contents=contents,
                 config=types.GenerateContentConfig(**config_kwargs),
             )
         except Exception as e:
