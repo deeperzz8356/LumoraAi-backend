@@ -10,8 +10,8 @@ def test_plan_catalog_contains_expected_subscription_tiers() -> None:
     assert "pro" in plan_codes
 
 
-def test_free_plan_has_one_signup_credit() -> None:
+def test_free_plan_has_seven_trial_credits() -> None:
     plan = get_plan_by_code("free")
 
     assert plan is not None
-    assert plan["signup_bonus_credits"] == 1
+    assert plan["signup_bonus_credits"] == 7

@@ -7,10 +7,10 @@ PLAN_CATALOG: list[dict[str, Any]] = [
         "name": "Free",
         "price_usd": 0.0,
         "monthly_credits": 0,
-        "signup_bonus_credits": 1,
+        "signup_bonus_credits": 7,
         "video_credits": 0,
         "features": [
-            "1 free image generation on signup",
+            "7 free trial credits on signup",
             "Basic templates",
             "Community support",
         ],

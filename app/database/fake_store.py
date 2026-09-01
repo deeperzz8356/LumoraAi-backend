@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 
+STARTER_CREDITS = 7
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -49,12 +51,12 @@ class FakeStore:
                 "displayName": "Demo Creator",
                 "createdAt": now_iso(),
             }
-            self.credits[user_id] = 10
+            self.credits[user_id] = STARTER_CREDITS
             self.profiles[user_id] = {
                 "id": user_id,
                 "displayName": "Demo Creator",
                 "bio": "Lumora AI demo profile",
-                "credits": 10,
+                "credits": STARTER_CREDITS,
             }
 
     def create_job(self, user_id: str, job_type: str, payload: dict, *, result_url: str | None = None) -> dict:
