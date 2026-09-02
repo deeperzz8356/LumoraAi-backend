@@ -19,3 +19,9 @@ async def credits_route(x_user_id: str = Header(default="demo-user")):
 async def add_credits_route(body: AddCreditsRequest | None = None, x_user_id: str = Header(default="demo-user")):
     amount = (body.amount if body else 5)
     return await add_credits(x_user_id, amount)
+
+
+@router.post("/add")
+async def add_credits_alias_route(body: AddCreditsRequest | None = None, x_user_id: str = Header(default="demo-user")):
+    amount = (body.amount if body else 5)
+    return await add_credits(x_user_id, amount)
