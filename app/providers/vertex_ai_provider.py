@@ -5,8 +5,14 @@ import logging
 from functools import lru_cache
 from typing import Any
 
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    genai = None
+    types = None
 
 from app.core.config import get_settings
 from app.core.credentials import load_vertex_credentials_from_settings
@@ -24,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 @lru_cache
 def _build_client() -> genai.Client:
+    if not GENAI_AVAILABLE:
+        raise RuntimeError("google-generativeai package not available")
     settings = get_settings()
     if not settings.google_cloud_project:
         raise RuntimeError(
@@ -42,6 +50,8 @@ def _build_client() -> genai.Client:
 
 def _build_image_client() -> genai.Client:
     """Build dedicated client for image generation."""
+    if not GENAI_AVAILABLE:
+        raise RuntimeError("google-generativeai package not available")
     settings = get_settings()
     if not settings.google_cloud_project:
         raise RuntimeError(
@@ -69,6 +79,9 @@ class VertexAIProvider:
         Uses generate_content() with response_modalities=["IMAGE"] instead of deprecated 
         generate_images() method, following the Vertex AI unified SDK pattern.
         """
+        if not GENAI_AVAILABLE:
+            raise RuntimeError("Vertex AI provider requires google-generativeai package")
+        
         settings = get_settings()
         # Use gemini-2.5-flash-image as the default model (configurable via settings)
         model = request.model or "gemini-2.5-flash-image"
@@ -130,6 +143,9 @@ class VertexAIProvider:
         )
 
     async def generate_video(self, payload: dict) -> dict:
+        if not GENAI_AVAILABLE:
+            raise RuntimeError("Vertex AI provider requires google-generativeai package")
+            
         settings = get_settings()
         model = payload.get("model") or settings.vertex_video_model
         prompt = payload.get("prompt") or ""
@@ -191,7 +207,7 @@ class VertexAIProvider:
 
         raise RuntimeError("Vertex AI Veo response had neither video bytes nor URI")
 
-    async def _poll_video_operation(self, client: genai.Client, operation: Any):
+    async def _poll_video_operation(self, client: Any, operation: Any):
         settings = get_settings()
         attempts = max(1, settings.vertex_video_poll_attempts)
         delay = max(1, settings.vertex_video_poll_seconds)

@@ -12,8 +12,14 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    genai = None
+    types = None
 
 from app.core.config import get_settings
 from app.core.credentials import load_vertex_credentials_from_settings
@@ -31,8 +37,11 @@ from app.providers.video_stitch import (
 logger = logging.getLogger(__name__)
 
 
-def _build_client() -> genai.Client:
+def _build_client():
     """Build Vertex AI client."""
+    if not GENAI_AVAILABLE:
+        raise RuntimeError("google-generativeai package not available")
+    
     settings = get_settings()
     if not settings.google_cloud_project:
         raise RuntimeError(
@@ -75,14 +84,17 @@ class VertexAIVideoProvider:
             
         Returns:
             {
-                'status': 'success' | 'error',
-                'video_url': str (data URL or local path),
-                'local_path': str (local file path if saved),
-                'duration': float (video duration in seconds),
+                'status': 'success',
+                'video_url': str,  # data URL or GCS URL
                 'model': str,
                 'provider': 'vertex-ai',
+                'duration': float,  # actual video duration
+                'file_size_mb': float
             }
         """
+        if not GENAI_AVAILABLE:
+            raise RuntimeError("Vertex AI Video provider requires google-generativeai package")
+        
         settings = get_settings()
         model = resolve_veo_model(payload.get("model"), settings.vertex_video_model)
         prompt = payload.get("prompt") or ""
@@ -178,8 +190,12 @@ class VertexAIVideoProvider:
                 'duration': float,
                 'model': str,
                 'provider': 'vertex-ai',
+                'file_size_mb': float
             }
         """
+        if not GENAI_AVAILABLE:
+            raise RuntimeError("Vertex AI Video provider requires google-generativeai package")
+        
         settings = get_settings()
         
         if not settings.vertex_video_stitch_enabled:
@@ -429,7 +445,7 @@ class VertexAIVideoProvider:
 
     async def _poll_video_operation(
         self,
-        client: genai.Client,
+        client: Any,
         operation: Any,
     ) -> Any:
         """
