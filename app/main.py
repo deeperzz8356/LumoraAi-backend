@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.credentials import ensure_vertex_credentials_env
 from app.core.firebase import initialize_firebase_app
-from app.routers import auth, users, generation, images, videos, templates, notifications, profile, settings, subscriptions, credits, upload, webhooks, billing
+from app.routers import auth, users, generation, images, videos, templates, notifications, profile, settings, subscriptions, credits, rewards, upload, webhooks, billing
 
 
 @asynccontextmanager
@@ -45,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(settings.router, prefix=f"{prefix}/settings", tags=["settings"])
     app.include_router(subscriptions.router, prefix=f"{prefix}/subscriptions", tags=["subscriptions"])
     app.include_router(credits.router, prefix=f"{prefix}/credits", tags=["credits"])
+    app.include_router(rewards.router, prefix=f"{prefix}/rewards", tags=["rewards"])
     app.include_router(upload.router, prefix=f"{prefix}/upload", tags=["upload"])
     app.include_router(webhooks.router, prefix=f"{prefix}/webhooks", tags=["webhooks"])
     app.include_router(billing.router, prefix=f"{prefix}/billing", tags=["billing"])
