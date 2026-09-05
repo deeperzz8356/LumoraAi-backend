@@ -24,7 +24,14 @@ except ImportError:
 from app.core.config import get_settings
 from app.core.credentials import load_vertex_credentials_from_settings
 from app.providers.gcs_utils import download_video_from_gcs, parse_gcs_uri
-from app.providers.media_utils import clamp_veo_duration, decode_base64_payload, encode_data_url, resolve_veo_model
+from app.providers.media_utils import (
+    apply_style_directive,
+    clamp_veo_duration,
+    decode_base64_payload,
+    encode_data_url,
+    is_default_style,
+    resolve_veo_model,
+)
 from app.providers.video_stitch import (
     calculate_video_scenes,
     cleanup_video_files,
@@ -97,7 +104,13 @@ class VertexAIVideoProvider:
         
         settings = get_settings()
         model = resolve_veo_model(payload.get("model"), settings.vertex_video_model)
-        prompt = payload.get("prompt") or ""
+        # Bugs 3 & 5 — parameter mapping to Vertex.
+        # aspect_ratio maps to the native GenerateVideosConfig.aspect_ratio field
+        # (below). style has no native Veo parameter, so it is mapped as a prompt
+        # directive appended to the prompt so the output reflects the selection.
+        style = payload.get("style")
+        base_prompt = payload.get("prompt") or ""
+        prompt = apply_style_directive(base_prompt, style)
         aspect_ratio = payload.get("aspect_ratio") or "16:9"
         duration = clamp_veo_duration(int(payload.get("duration") or 8), model)
 
@@ -113,6 +126,23 @@ class VertexAIVideoProvider:
             "duration_seconds": duration,
             "person_generation": "allow_adult",
         }
+
+        # Shared invariant (Property 5): every UI-selected generation parameter
+        # must be present in the outgoing Vertex request. Verify aspect_ratio is
+        # mapped to the Vertex config and, when a non-default style is selected,
+        # that the style directive reached the prompt.
+        selected_params: dict[str, Any] = {"aspect_ratio": aspect_ratio}
+        if not is_default_style(style):
+            selected_params["style"] = style
+        for name, value in selected_params.items():
+            if name == "aspect_ratio":
+                assert config_kwargs.get("aspect_ratio") == value, (
+                    "aspect_ratio was not mapped into the Vertex request"
+                )
+            elif name == "style":
+                assert value.strip().lower() in prompt.lower(), (
+                    "style was not mapped into the Vertex request prompt"
+                )
         
         # Use GCS output if configured
         if settings.vertex_video_output_gcs_uri:

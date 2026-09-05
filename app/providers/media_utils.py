@@ -49,6 +49,44 @@ def clamp_veo_duration(seconds: int, model: str) -> int:
     return min(allowed, key=lambda value: abs(value - max(1, seconds)))
 
 
+# Style values that mean "no style / default output" and must NOT inject a
+# style directive into the prompt (preservation req 3.13). Compared
+# case-insensitively.
+_DEFAULT_STYLE_SENTINELS = {"", "default", "none", "standard"}
+
+
+def is_default_style(style: str | None) -> bool:
+    """Return True when ``style`` represents the default/unstyled selection.
+
+    A default style must leave the prompt unchanged so unstyled output is
+    preserved (Bug 5 preservation, req 3.13).
+    """
+    if not style:
+        return True
+    return style.strip().lower() in _DEFAULT_STYLE_SENTINELS
+
+
+def apply_style_directive(prompt: str, style: str | None) -> str:
+    """Map a UI-selected ``style`` onto the Vertex request as a prompt directive.
+
+    Veo's ``GenerateVideosConfig`` exposes no native ``style`` parameter, so the
+    style is carried through as an explicit directive appended to the prompt so
+    the generated video visibly reflects the selection (Bug 5, req 2.18/2.19).
+    When no style (or the default sentinel) is selected the prompt is returned
+    unchanged (preservation req 3.13).
+    """
+    if is_default_style(style):
+        return prompt
+    directive = f"in {style.strip()} style"
+    base = (prompt or "").strip()
+    if not base:
+        return directive
+    # Avoid double-appending if the caller already included the directive.
+    if directive.lower() in base.lower():
+        return base
+    return f"{base}, {directive}"
+
+
 def resolve_veo_model(model: str | None, default: str) -> str:
     """Map UI labels and aliases to a Vertex AI Veo model id."""
     if not model or not model.strip():

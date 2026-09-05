@@ -1,16 +1,62 @@
 import logging
+import os
 
+from app.core.config import get_settings
 from app.database.firestore_repositories.credit_repo import credit_repo
 from app.database.firestore_repositories.analytics_repo import analytics_repo
 from app.providers.media_utils import encode_data_url
 from app.providers.vertex_ai_provider import VertexAIProvider
 from app.providers.vertex_ai_video_provider import VertexAIVideoProvider
 from app.schemas.images import ImageGenerateRequest
+from app.utils.upstream_rate_limit import (
+    UpstreamRateLimitError,
+    call_with_retry,
+)
 
 logger = logging.getLogger(__name__)
 
 image_provider = VertexAIProvider()
 video_provider = VertexAIVideoProvider()
+
+
+def _has_confirmed_output(result: dict) -> bool:
+    """confirmedOutput(X): a generation is counted only when it produced real,
+    extractable output — a non-error status AND an actual media URL.
+
+    Bug 4 (Requirements 2.13, 2.16): the generation counter must increment only
+    for confirmed outputs, not on a bare 200 OK. A swallowed/rate-limited 429 or
+    any error result (now surfaced honestly by Task 3.3) is NOT a confirmed
+    output and must not be counted.
+    """
+    if not isinstance(result, dict):
+        return False
+    if result.get("status") == "error":
+        return False
+    return bool(result.get("video_url") or result.get("image_url"))
+
+
+async def _call_upstream_with_retry(func):
+    """Run an upstream Vertex call with bounded 429 retry/backoff + concurrency.
+
+    Bug 1 (isBugCondition1): honors Vertex's retryDelay with bounded exponential
+    backoff + jitter, caps concurrency via an in-process semaphore, and raises
+    UpstreamRateLimitError (http_status in {429, 503}) when retries are
+    exhausted so the router can surface an honest failure.
+    """
+    settings = get_settings()
+    # Never sleep for real seconds inside the test suite: keep contract tests fast
+    # and deterministic. Backoff delays are still computed, just not slept.
+    sleep_enabled = settings.upstream_retry_sleep_enabled and not os.environ.get(
+        "PYTEST_CURRENT_TEST"
+    )
+    return await call_with_retry(
+        func,
+        max_retries=settings.upstream_max_retries,
+        base_seconds=settings.upstream_backoff_base_seconds,
+        max_seconds=settings.upstream_backoff_max_seconds,
+        concurrency_limit=settings.upstream_concurrency_limit,
+        sleep_enabled=sleep_enabled,
+    )
 
 
 async def generate_image(user_id: str, payload: dict, *, developer_mode: bool = False) -> dict:
@@ -22,7 +68,21 @@ async def generate_image(user_id: str, payload: dict, *, developer_mode: bool = 
         return {"status": "error", "message": "Insufficient credits to generate image"}
 
     try:
-        generated = await image_provider.generate_image(request_obj)
+        generated = await _call_upstream_with_retry(
+            lambda: image_provider.generate_image(request_obj)
+        )
+    except UpstreamRateLimitError as exc:
+        # Bug 1: upstream 429 persisted after bounded retries. Refund and surface
+        # an HONEST failure (http_status in {429, 503}) — never a 200-with-no-output.
+        try:
+            credit_repo.add_credits(user_id, amount=1)
+        except Exception:
+            pass
+        return {
+            "status": "error",
+            "message": f"Image generation rate limited upstream: {exc}",
+            "http_status": exc.http_status,
+        }
     except Exception as exc:
         # Best-effort refund so a provider failure does not permanently burn the credit.
         try:
@@ -33,12 +93,17 @@ async def generate_image(user_id: str, payload: dict, *, developer_mode: bool = 
 
     image_url = encode_data_url(generated.image_bytes, generated.mime_type)
 
-    analytics_repo.log_generation(
-        user_id=user_id,
-        feature=f"text_to_image_style_{request_obj.style}" if request_obj.style else "text_to_image",
-        provider="vertex-ai",
-        prompt=request_obj.prompt,
-    )
+    # Bug 4 (isBugCondition4, generation half): count the generation ONLY when a
+    # confirmed output exists (image_url present), never on a bare 200 OK. A
+    # swallowed/rate-limited failure now returns early above (honest {429,503})
+    # and never reaches this line, so the counter reflects confirmed outputs only.
+    if _has_confirmed_output({"status": "success", "image_url": image_url}):
+        analytics_repo.log_generation(
+            user_id=user_id,
+            feature=f"text_to_image_style_{request_obj.style}" if request_obj.style else "text_to_image",
+            provider="vertex-ai",
+            prompt=request_obj.prompt,
+        )
 
     return {
         "status": "success",
@@ -57,7 +122,21 @@ async def generate_video(user_id: str, payload: dict, *, developer_mode: bool = 
     prompt = payload.get("prompt", "")
 
     try:
-        generated = await video_provider.generate_single_video(payload)
+        generated = await _call_upstream_with_retry(
+            lambda: video_provider.generate_single_video(payload)
+        )
+    except UpstreamRateLimitError as exc:
+        # Bug 1: upstream 429 persisted after bounded retries. Refund and surface
+        # an HONEST failure (http_status in {429, 503}) — never a 200-with-no-output.
+        try:
+            credit_repo.add_credits(user_id, amount=5)
+        except Exception:
+            pass
+        return {
+            "status": "error",
+            "message": f"Video generation rate limited upstream: {exc}",
+            "http_status": exc.http_status,
+        }
     except Exception as exc:
         try:
             credit_repo.add_credits(user_id, amount=5)
@@ -75,12 +154,17 @@ async def generate_video(user_id: str, payload: dict, *, developer_mode: bool = 
             "message": generated.get("message", "Video generation failed"),
         }
 
-    analytics_repo.log_generation(
-        user_id=user_id,
-        feature="text_to_video",
-        provider=generated.get("provider", "vertex-ai"),
-        prompt=prompt,
-    )
+    # Bug 4 (isBugCondition4, generation half): count the generation ONLY when a
+    # confirmed output exists (video_url present), never on a bare 200 OK. Honest
+    # upstream failures ({429,503}) and error results return early above and never
+    # reach this line, so the counter reflects confirmed outputs only.
+    if _has_confirmed_output(generated):
+        analytics_repo.log_generation(
+            user_id=user_id,
+            feature="text_to_video",
+            provider=generated.get("provider", "vertex-ai"),
+            prompt=prompt,
+        )
 
     return {
         "status": "success",

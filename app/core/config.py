@@ -65,6 +65,43 @@ class Settings(BaseSettings):
     )
     vertex_video_poll_seconds: int = Field(default=15, ge=1, le=120)
     vertex_video_poll_attempts: int = Field(default=40, ge=1, le=200)
+
+    # Bug 1: upstream 429 (RESOURCE_EXHAUSTED) handling — bounded exponential
+    # backoff + jitter and in-process concurrency limiting. No Redis/Celery/queues
+    # (Render FREE plan): state is in-process only.
+    upstream_max_retries: int = Field(
+        default=4,
+        ge=0,
+        le=10,
+        validation_alias=AliasChoices("UPSTREAM_MAX_RETRIES"),
+        description="Max retry attempts on a retriable upstream 429 before honest failure.",
+    )
+    upstream_backoff_base_seconds: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=30.0,
+        validation_alias=AliasChoices("UPSTREAM_BACKOFF_BASE_SECONDS"),
+        description="Base delay for exponential backoff on upstream 429.",
+    )
+    upstream_backoff_max_seconds: float = Field(
+        default=20.0,
+        ge=0.0,
+        le=120.0,
+        validation_alias=AliasChoices("UPSTREAM_BACKOFF_MAX_SECONDS"),
+        description="Ceiling for a single backoff delay (also caps honored retryDelay).",
+    )
+    upstream_concurrency_limit: int = Field(
+        default=3,
+        ge=1,
+        le=50,
+        validation_alias=AliasChoices("UPSTREAM_CONCURRENCY_LIMIT"),
+        description="Max simultaneous Vertex calls guarded by an in-process semaphore.",
+    )
+    upstream_retry_sleep_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("UPSTREAM_RETRY_SLEEP_ENABLED"),
+        description="When False, backoff delays are computed but not slept (fast tests).",
+    )
     
     # Video stitching settings
     vertex_video_output_dir: str = Field(

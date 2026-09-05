@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Header
+from fastapi.responses import JSONResponse
 import uuid
 
 from app.core.dev_mode import is_developer_mode_header
@@ -25,7 +26,20 @@ async def images_generate_route(
         body.model_dump(),
         developer_mode=is_developer_mode_header(x_developer_mode),
     )
-    
+
+    # Bug 1: an exhausted upstream 429 must surface as an honest HTTP failure
+    # (429/503), never HTTP 200 with an empty imageUrl.
+    rate_limit_status = result.get("http_status") or result.get("status_code")
+    if rate_limit_status in (429, 503):
+        return JSONResponse(
+            status_code=rate_limit_status,
+            content={
+                "status": "error",
+                "message": result.get("message", "Upstream rate limited"),
+                "http_status": rate_limit_status,
+            },
+        )
+
     if result.get("status") == "error":
         return ImageGenerateResponse(
             status="error",
