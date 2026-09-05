@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from app.core.auth_context import resolve_user_id
 from app.services.profile_service import get_profile, update_profile
 
 router = APIRouter()
@@ -14,14 +15,14 @@ class ProfileUpdateRequest(BaseModel):
 
 
 @router.get("")
-async def profile_route(x_user_id: str = Header(default="demo-user")):
-    return await get_profile(x_user_id)
+async def profile_route(user_id: str = Depends(resolve_user_id)):
+    return await get_profile(user_id)
 
 
 @router.put("")
-async def update_profile_route(body: ProfileUpdateRequest, x_user_id: str = Header(default="demo-user")):
+async def update_profile_route(body: ProfileUpdateRequest, user_id: str = Depends(resolve_user_id)):
     try:
-        return await update_profile(x_user_id, body.model_dump(exclude_unset=True))
+        return await update_profile(user_id, body.model_dump(exclude_unset=True))
     except KeyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
