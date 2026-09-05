@@ -175,10 +175,53 @@ def verify_purchase(payload: VerifyRequest, user: dict[str, Any] = Depends(_fire
                  int(auto_renewing), subscription_state),
             )
         db.commit()
-        balance = db.execute("SELECT credits FROM balances WHERE uid = ?", (uid,)).fetchone()
+
+        # --- Single source of truth reconciliation -------------------------
+        # The app reads/spends the Firestore `users.credits` balance, not this
+        # SQLite ledger. Previously verified purchases credited only SQLite, so
+        # bought credits never appeared in the app. Reconcile into Firestore:
+        #   - in-app credit packs: add `credits` once, keyed by purchase_token
+        #     (idempotent, so retries/duplicate deliveries do not double-credit).
+        #   - subscriptions: activate the mapped plan in Firestore so its
+        #     monthly_credits land where the app reads them.
+        # This is best-effort AFTER the authoritative SQLite commit; a Firestore
+        # hiccup is logged but never fails an already-verified purchase.
+        firestore_balance: int | None = None
+        try:
+            if product["kind"] == "inapp" and credits and not existing:
+                from app.database.firestore_repositories.credit_repo import credit_repo
+                firestore_balance = credit_repo.add_credits_idempotent(
+                    uid, credits, idempotency_key=f"play:{payload.purchase_token}"
+                )
+            elif product["kind"] == "inapp":
+                from app.database.firestore_repositories.credit_repo import credit_repo
+                firestore_balance = credit_repo.get_credits(uid)
+            elif product["kind"] == "subs" and active:
+                from app.services.billing_service import billing_service
+                plan_code = billing_service._map_product_to_plan(payload.product_id)
+                status_dict = billing_service.activate_subscription(uid, plan_code)
+                firestore_balance = status_dict.get("credits")
+        except Exception as exc:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).warning(
+                "Firestore credit reconciliation failed for %s: %s", uid, exc
+            )
+
+        # Prefer the Firestore balance (what the app actually reads); fall back
+        # to the SQLite ledger only if reconciliation was unavailable.
+        if firestore_balance is None:
+            try:
+                from app.database.firestore_repositories.credit_repo import credit_repo
+                firestore_balance = credit_repo.get_credits(uid)
+            except Exception:  # noqa: BLE001
+                sqlite_balance = db.execute(
+                    "SELECT credits FROM balances WHERE uid = ?", (uid,)
+                ).fetchone()
+                firestore_balance = sqlite_balance["credits"] if sqlite_balance else 0
+
         return {
             "status": "success" if product["kind"] == "inapp" or active else "inactive",
-            "balance": balance["credits"],
+            "balance": firestore_balance,
             "active": active if product["kind"] == "subs" else True,
             "idempotent": bool(existing),
         }
