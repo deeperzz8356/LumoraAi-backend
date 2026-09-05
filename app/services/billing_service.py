@@ -95,16 +95,25 @@ class BillingService:
         return self.get_subscription_status(user_id)
 
     def _map_product_to_plan(self, product_id: str) -> str:
-        if "pro_monthly" in product_id or "monthly" in product_id:
-            return "pro_monthly"
-        if "pro_annual" in product_id or "annual" in product_id:
-            return "pro_annual"
-        if "elite_pro" in product_id or "elite" in product_id:
+        # Order matters: check the more specific tokens (elite, annual) before the
+        # generic "monthly", and match the real Play/RevenueCat product ids which
+        # now exist as catalog codes (pro_monthly / pro_annual / elite_pro).
+        pid = (product_id or "").lower()
+        if "elite" in pid:
             return "elite_pro"
+        if "annual" in pid:
+            return "pro_annual"
+        if "monthly" in pid or "pro_monthly" in pid:
+            return "pro_monthly"
         return "free"
 
     def _activate_from_webhook(self, user_id: str, plan_code: str, expires_at_ms: int | None) -> dict[str, Any]:
-        plan = get_plan_by_code(plan_code) or {}
+        plan = get_plan_by_code(plan_code)
+        if not plan:
+            # Never silently downgrade a paying user to a 0-credit "free" plan on
+            # an unrecognized product. Surface it so the mapping/catalog can be
+            # fixed rather than quietly dropping credits.
+            raise ValueError(f"Unknown subscription plan for webhook: {plan_code!r}")
         user_data = self.user_repo.get_user(user_id) or {}
         self.user_repo.ensure_user(user_id, user_data.get("email"))
         

@@ -8,7 +8,8 @@ import logging
 from datetime import datetime
 from typing import Optional, List
 
-from app.database.firestore_db import db
+from google.cloud import firestore
+from app.core.firebase import get_firestore_client
 from app.database.models.video_model import (
     VideoGenerationJob,
     VideoStatus,
@@ -25,6 +26,13 @@ VIDEO_HISTORY_COLLECTION = "video_generation_history"
 class VideoRepository:
     """Repository for video generation data."""
 
+    @property
+    def db(self):
+        # Lazy client (consistent with the other Firestore repos). The previous
+        # `from app.database.firestore_db import db` imported a module that does
+        # not exist, so this repo crashed on import.
+        return get_firestore_client()
+
     def create_job(self, job: VideoGenerationJob) -> bool:
         """
         Create a new video generation job.
@@ -36,7 +44,7 @@ class VideoRepository:
             True if successful
         """
         try:
-            db.collection(VIDEO_JOBS_COLLECTION).document(job.job_id).set(
+            self.db.collection(VIDEO_JOBS_COLLECTION).document(job.job_id).set(
                 job.to_dict()
             )
             logger.info(f"Created video job: {job.job_id}")
@@ -64,7 +72,7 @@ class VideoRepository:
                 elif isinstance(value, VideoStatus):
                     updates[key] = value.value
             
-            db.collection(VIDEO_JOBS_COLLECTION).document(job_id).update(updates)
+            self.db.collection(VIDEO_JOBS_COLLECTION).document(job_id).update(updates)
             logger.info(f"Updated video job: {job_id}")
             return True
         except Exception as e:
@@ -82,7 +90,7 @@ class VideoRepository:
             VideoGenerationJob or None if not found
         """
         try:
-            doc = db.collection(VIDEO_JOBS_COLLECTION).document(job_id).get()
+            doc = self.db.collection(VIDEO_JOBS_COLLECTION).document(job_id).get()
             if doc.exists:
                 return VideoGenerationJob.from_dict(doc.to_dict())
             return None
@@ -102,7 +110,7 @@ class VideoRepository:
             List of VideoGenerationJob objects
         """
         try:
-            docs = db.collection(VIDEO_JOBS_COLLECTION) \
+            docs = self.db.collection(VIDEO_JOBS_COLLECTION) \
                 .where('user_id', '==', user_id) \
                 .order_by('created_at', direction='DESCENDING') \
                 .limit(limit) \
@@ -137,7 +145,7 @@ class VideoRepository:
             List of VideoGenerationJob objects
         """
         try:
-            docs = db.collection(VIDEO_JOBS_COLLECTION) \
+            docs = self.db.collection(VIDEO_JOBS_COLLECTION) \
                 .where('status', '==', status.value) \
                 .limit(limit) \
                 .stream()
@@ -166,7 +174,7 @@ class VideoRepository:
             True if successful
         """
         try:
-            db.collection(VIDEO_JOBS_COLLECTION).document(job_id).delete()
+            self.db.collection(VIDEO_JOBS_COLLECTION).document(job_id).delete()
             logger.info(f"Deleted video job: {job_id}")
             return True
         except Exception as e:
@@ -270,14 +278,14 @@ class VideoRepository:
             VideoGenerationHistory object
         """
         try:
-            doc = db.collection(VIDEO_HISTORY_COLLECTION).document(user_id).get()
+            doc = self.db.collection(VIDEO_HISTORY_COLLECTION).document(user_id).get()
             if doc.exists:
                 data = doc.to_dict()
                 return VideoGenerationHistory(**data)
             else:
                 # Create new history
                 history = VideoGenerationHistory(user_id=user_id, job_ids=[])
-                db.collection(VIDEO_HISTORY_COLLECTION).document(user_id).set(
+                self.db.collection(VIDEO_HISTORY_COLLECTION).document(user_id).set(
                     history.to_dict()
                 )
                 return history
@@ -297,11 +305,18 @@ class VideoRepository:
             True if successful
         """
         try:
-            history_ref = db.collection(VIDEO_HISTORY_COLLECTION).document(user_id)
-            history_ref.update({
-                'job_ids': [job_id],  # Will be appended by Firebase
-                'last_generation_at': datetime.now().isoformat(),
-            })
+            history_ref = self.db.collection(VIDEO_HISTORY_COLLECTION).document(user_id)
+            # ArrayUnion appends without overwriting the existing list. The prior
+            # `update({'job_ids': [job_id]})` REPLACED the array, so history kept
+            # only the most recent job.
+            history_ref.set(
+                {
+                    'job_ids': firestore.ArrayUnion([job_id]),
+                    'total_videos_generated': firestore.Increment(1),
+                    'last_generation_at': datetime.now().isoformat(),
+                },
+                merge=True,
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to add job to history: {e}")

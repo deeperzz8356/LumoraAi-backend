@@ -10,6 +10,15 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     allowed_origins: list[str] = ["http://localhost:8081", "exp://localhost:8081"]
 
+    # Security: when True, endpoints resolving identity via resolve_user_id
+    # REQUIRE a valid Firebase Bearer token and ignore x-user-id for identity.
+    # Default False for backward compatibility (tests/local dev); enable in prod.
+    require_auth: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("REQUIRE_AUTH"),
+        description="Require a verified Firebase token to resolve user identity.",
+    )
+
     cloudflare_api_token: str = Field(
         default="",
         validation_alias=AliasChoices("CLOUDFLARE_API_TOKEN", "cloud-fare-api"),

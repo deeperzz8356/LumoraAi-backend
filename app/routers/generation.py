@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Depends, Header
 from fastapi.responses import JSONResponse
+from app.core.auth_context import resolve_user_id
 from app.core.dev_mode import is_developer_mode_header
 from app.schemas.generation import VideoGenerateRequest, JobResponse
 from app.schemas.images import ImageGenerateRequest
@@ -22,11 +23,11 @@ def _honest_failure_status(result: dict) -> int | None:
 @router.post("/image")
 async def generate_image_route(
     body: ImageGenerateRequest,
-    x_user_id: str = Header(default="demo-user"),
+    user_id: str = Depends(resolve_user_id),
     x_developer_mode: str | None = Header(default=None),
 ):
     result = await generate_image(
-        x_user_id,
+        user_id,
         body.model_dump(),
         developer_mode=is_developer_mode_header(x_developer_mode),
     )
@@ -39,11 +40,11 @@ async def generate_image_route(
 @router.post("/video")
 async def generate_video_route(
     body: VideoGenerateRequest,
-    x_user_id: str = Header(default="demo-user"),
+    user_id: str = Depends(resolve_user_id),
     x_developer_mode: str | None = Header(default=None),
 ):
     result = await generate_video(
-        x_user_id,
+        user_id,
         body.model_dump(),
         developer_mode=is_developer_mode_header(x_developer_mode),
     )
@@ -56,7 +57,7 @@ async def generate_video_route(
 
 
 @router.get("/history")
-async def get_generation_history(x_user_id: str = Header(default="demo-user")):
+async def get_generation_history(user_id: str = Depends(resolve_user_id)):
     from app.database.firestore_repositories.generations_repo import generations_repo
-    history = generations_repo.get_user_generations(user_id=x_user_id)
+    history = generations_repo.get_user_generations(user_id=user_id)
     return {"status": "success", "data": history}

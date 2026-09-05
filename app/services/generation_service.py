@@ -4,6 +4,7 @@ import os
 from app.core.config import get_settings
 from app.database.firestore_repositories.credit_repo import credit_repo
 from app.database.firestore_repositories.analytics_repo import analytics_repo
+from app.database.firestore_repositories.generations_repo import generations_repo
 from app.providers.media_utils import encode_data_url
 from app.providers.vertex_ai_provider import VertexAIProvider
 from app.providers.vertex_ai_video_provider import VertexAIVideoProvider
@@ -104,6 +105,21 @@ async def generate_image(user_id: str, payload: dict, *, developer_mode: bool = 
             provider="vertex-ai",
             prompt=request_obj.prompt,
         )
+        # Persist to the `generations` collection so GET /generation/history
+        # (which reads that collection) reflects real generations, and so
+        # find_cached_image can reuse prior outputs. Best-effort: a failure here
+        # must not fail the generation the user already paid for.
+        try:
+            generations_repo.save_generation(
+                user_id=user_id,
+                prompt=request_obj.prompt,
+                style=request_obj.style or "",
+                image_url=image_url,
+                provider="vertex-ai",
+                model=generated.model,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to persist image generation history: %s", exc)
 
     return {
         "status": "success",
@@ -165,6 +181,20 @@ async def generate_video(user_id: str, payload: dict, *, developer_mode: bool = 
             provider=generated.get("provider", "vertex-ai"),
             prompt=prompt,
         )
+        # Persist so GET /generation/history reflects real videos. The history
+        # doc reuses image_url as the media URL column (the client reads that
+        # field for both media types). Best-effort.
+        try:
+            generations_repo.save_generation(
+                user_id=user_id,
+                prompt=prompt,
+                style=payload.get("style") or "",
+                image_url=generated["video_url"],
+                provider=generated.get("provider", "vertex-ai"),
+                model=generated.get("model") or "",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to persist video generation history: %s", exc)
 
     return {
         "status": "success",
