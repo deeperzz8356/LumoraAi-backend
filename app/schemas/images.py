@@ -10,7 +10,12 @@ class ImageGenerateRequest(BaseModel):
     steps: int | None = Field(default=None, ge=1, le=50)
     seed: int | None = Field(default=None, ge=0)
     style: str | None = Field(default=None, max_length=100)
+    # Single reference image (legacy) OR multiple reference images. When the
+    # client sends 2-3 images they are all passed to the model together so the
+    # generation is conditioned on every uploaded reference. ``source_image_b64``
+    # is kept for backward compatibility with older clients.
     source_image_b64: str | None = None
+    source_images_b64: list[str] | None = Field(default=None, max_length=3)
 
 
 class ImageGenerateResponse(BaseModel):

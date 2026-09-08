@@ -99,8 +99,16 @@ class VertexAIProvider:
         }
 
         contents: list[Any] = [request.prompt]
-        if request.source_image_b64:
-            image_bytes = decode_base64_payload(request.source_image_b64)
+        # Collect every reference image: the multi-image list takes precedence,
+        # falling back to the single legacy field. Up to 3 references are passed
+        # to Gemini together so the output is conditioned on all of them.
+        reference_images = list(request.source_images_b64 or [])
+        if not reference_images and request.source_image_b64:
+            reference_images = [request.source_image_b64]
+        for encoded in reference_images[:3]:
+            if not encoded:
+                continue
+            image_bytes = decode_base64_payload(encoded)
             contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
 
         # Use dedicated image generation client
