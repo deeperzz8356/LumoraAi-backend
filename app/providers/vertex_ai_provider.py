@@ -69,6 +69,60 @@ def _build_image_client() -> genai.Client:
     )
 
 
+def _extract_vertex_image_bytes(response: Any) -> tuple[bytes, str] | None:
+    """Return the first image payload from common Gen AI response shapes."""
+    def normalize_bytes(value: Any) -> bytes | None:
+        if isinstance(value, bytes):
+            return value
+        if isinstance(value, str) and value.strip():
+            return decode_base64_payload(value)
+        return None
+
+    candidates = list(getattr(response, "candidates", None) or [])
+    for candidate in candidates:
+        content = getattr(candidate, "content", None)
+        parts = list(getattr(content, "parts", None) or [])
+        for part in parts:
+            for attr_name in ("inline_data", "inlineData", "blob"):
+                payload = getattr(part, attr_name, None)
+                data = getattr(payload, "data", None)
+                image_bytes = normalize_bytes(data)
+                if image_bytes:
+                    mime_type = getattr(payload, "mime_type", None) or getattr(payload, "mimeType", None) or "image/png"
+                    return image_bytes, mime_type
+            text = getattr(part, "text", None)
+            if isinstance(text, str) and text.startswith("data:image/"):
+                return decode_base64_payload(text), text.split(";", 1)[0].removeprefix("data:")
+
+    for attr_name in ("generated_images", "images"):
+        images = list(getattr(response, attr_name, None) or [])
+        for image in images:
+            data = getattr(image, "image_bytes", None) or getattr(image, "bytes_base64_encoded", None)
+            image_bytes = normalize_bytes(data)
+            if image_bytes:
+                return image_bytes, getattr(image, "mime_type", None) or "image/png"
+
+    return None
+
+
+def _describe_empty_vertex_image_response(response: Any) -> str:
+    candidates = list(getattr(response, "candidates", None) or [])
+    if not candidates:
+        return "Image generation returned no candidates. Please try again."
+
+    candidate = candidates[0]
+    finish_reason = getattr(candidate, "finish_reason", None) or getattr(candidate, "finishReason", None)
+    safety = getattr(candidate, "safety_ratings", None) or getattr(candidate, "safetyRatings", None)
+    if finish_reason:
+        reason = str(finish_reason).split(".")[-1].lower().replace("_", " ")
+        if "safety" in reason or "block" in reason:
+            return "Image generation was blocked by the provider safety filters. Please adjust the prompt and try again."
+        return f"Image generation finished without an image ({reason}). Please adjust the prompt and try again."
+    if safety:
+        return "Image generation returned no image, possibly due to provider safety filters. Please adjust the prompt and try again."
+    return "Image generation returned no image. Please adjust the prompt or try again."
+
+
 class VertexAIProvider:
     """Image (Imagen) and video (Veo) generation via Vertex AI / Google Gen AI SDK."""
 
@@ -124,26 +178,12 @@ class VertexAIProvider:
             logger.error(f"generate_content failed: {e}")
             raise RuntimeError(f"Vertex AI image generation failed: {str(e)[:100]}")
 
-        # Extract image from response
-        if not response.candidates:
-            raise RuntimeError("Vertex AI returned no response candidates")
+        extracted = _extract_vertex_image_bytes(response)
+        if extracted is None:
+            logger.warning("Vertex image response had no usable image payload: %r", response)
+            raise RuntimeError(_describe_empty_vertex_image_response(response))
 
-        candidate = response.candidates[0]
-        if not candidate.content or not candidate.content.parts:
-            raise RuntimeError("Vertex AI returned no content parts")
-
-        # Find the image part in the response
-        image_bytes = None
-        for part in candidate.content.parts:
-            if hasattr(part, 'inline_data') and part.inline_data:
-                # Extract image bytes from inline_data
-                image_bytes = part.inline_data.data
-                break
-
-        if not image_bytes:
-            raise RuntimeError("Vertex AI response contains no image data")
-
-        mime_type = "image/png"
+        image_bytes, mime_type = extracted
         return GeneratedImage(
             image_bytes=image_bytes,
             mime_type=mime_type,

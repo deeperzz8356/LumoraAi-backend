@@ -90,7 +90,22 @@ async def generate_image(user_id: str, payload: dict, *, developer_mode: bool = 
             credit_repo.add_credits(user_id, amount=1)
         except Exception:
             pass
-        return {"status": "error", "message": f"Vertex AI image generation failed: {exc}"}
+        detail = str(exc).strip()
+        lower_detail = detail.lower()
+        if (
+            "no content" in lower_detail
+            or "no image" in lower_detail
+            or "no usable image" in lower_detail
+            or "safety" in lower_detail
+            or "blocked" in lower_detail
+            or "finished without an image" in lower_detail
+        ):
+            message = detail
+        elif detail.startswith("Vertex AI image generation failed:"):
+            message = detail
+        else:
+            message = f"Image generation failed: {detail or 'Please try again.'}"
+        return {"status": "error", "message": message}
 
     image_url = encode_data_url(generated.image_bytes, generated.mime_type)
 
