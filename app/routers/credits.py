@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Header
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fastapi import HTTPException
 from app.core.auth_context import resolve_user_id
@@ -19,6 +19,8 @@ class DeductCreditsRequest(BaseModel):
     # The client names the billable ACTION; the server prices it. This charges
     # credits for on-device actions (e.g. background removal) that do not flow
     # through a generation endpoint.
+    policy_revision: str | None = None
+    request_id: str | None = Field(default=None, min_length=1, max_length=128)
     action: str
 
 
@@ -58,9 +60,19 @@ async def deduct_credits_route(
 
     402 when the balance is insufficient; 400 for an unknown action.
     """
-    result = await deduct_credits_for_action(user_id, body.action)
+    result = await deduct_credits_for_action(user_id, body.action, body.policy_revision, body.request_id)
     if result.get("status") == "insufficient":
         raise HTTPException(status_code=402, detail="Insufficient credits.")
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result.get("message", "Bad request"))
     return result
+
+
+class RefundToolRequest(BaseModel):
+    request_id: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/refund-tool")
+async def refund_tool_route(body: RefundToolRequest, user_id: str = Depends(resolve_user_id)):
+    from app.database.firestore_repositories.credit_repo import credit_repo
+    return {"status": "success", "balance": credit_repo.refund_action(user_id, body.request_id)}

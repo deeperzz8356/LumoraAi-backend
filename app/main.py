@@ -1,3 +1,7 @@
+import asyncio
+from contextlib import suppress
+from app.services import tool_policy as policy_service
+from app.routers import tool_policy
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -13,7 +17,15 @@ from app.routers import auth, users, generation, images, videos, templates, noti
 async def lifespan(app: FastAPI):
     ensure_vertex_credentials_env()
     initialize_firebase_app()
-    yield
+    policy_service.restore_cache()
+    await asyncio.to_thread(policy_service.refresh)
+    policy_task = asyncio.create_task(policy_service.refresh_loop())
+    try:
+        yield
+    finally:
+        policy_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await policy_task
 
 
 def create_app() -> FastAPI:
@@ -34,6 +46,7 @@ def create_app() -> FastAPI:
     )
 
     prefix = app_settings.api_prefix
+    app.include_router(tool_policy.router, prefix=f"{prefix}/tool-policy", tags=["configuration"])
     app.include_router(auth.router, prefix=f"{prefix}/auth", tags=["auth"])
     app.include_router(users.router, prefix=f"{prefix}/users", tags=["users"])
     app.include_router(generation.router, prefix=f"{prefix}/generation", tags=["generation"])

@@ -1,3 +1,4 @@
+from app.services.tool_policy import authorize
 import logging
 import os
 
@@ -61,11 +62,14 @@ async def _call_upstream_with_retry(func):
 
 
 async def generate_image(user_id: str, payload: dict, *, developer_mode: bool = False) -> dict:
+    tool = payload.get("tool") or ("image_to_image" if payload.get("source_image_b64") or payload.get("source_images_b64") else "text_to_image")
+    cost = authorize(tool, payload.get("policy_revision"), allowed={"text_to_image", "image_to_image", "logo", "avatar", "background_replace"})
+    cost = 0 if developer_mode else cost
     request_obj = ImageGenerateRequest(**payload)
     if request_obj.style:
         request_obj.prompt = f"{request_obj.prompt}, in {request_obj.style} style"
 
-    if not developer_mode and not credit_repo.deduct_credits(user_id, amount=1):
+    if cost > 0 and not credit_repo.deduct_credits(user_id, amount=cost):
         return {"status": "error", "message": "Insufficient credits to generate image"}
 
     try:
@@ -76,7 +80,7 @@ async def generate_image(user_id: str, payload: dict, *, developer_mode: bool = 
         # Bug 1: upstream 429 persisted after bounded retries. Refund and surface
         # an HONEST failure (http_status in {429, 503}) — never a 200-with-no-output.
         try:
-            credit_repo.add_credits(user_id, amount=1)
+            credit_repo.add_credits(user_id, amount=cost)
         except Exception:
             pass
         return {
@@ -87,7 +91,7 @@ async def generate_image(user_id: str, payload: dict, *, developer_mode: bool = 
     except Exception as exc:
         # Best-effort refund so a provider failure does not permanently burn the credit.
         try:
-            credit_repo.add_credits(user_id, amount=1)
+            credit_repo.add_credits(user_id, amount=cost)
         except Exception:
             pass
         detail = str(exc).strip()
@@ -146,8 +150,10 @@ async def generate_image(user_id: str, payload: dict, *, developer_mode: bool = 
 
 async def generate_video(user_id: str, payload: dict, *, developer_mode: bool = False) -> dict:
     """Generate a single 8-second video."""
-    # Single video generation is cheaper (5 credits)
-    if not developer_mode and not credit_repo.deduct_credits(user_id, amount=5):
+    tool = payload.get("tool") or ("image_to_video" if payload.get("source_image_b64") else "text_to_video")
+    cost = authorize(tool, payload.get("policy_revision"), allowed={"text_to_video", "image_to_video", "promo_video"})
+    cost = 0 if developer_mode else cost
+    if cost > 0 and not credit_repo.deduct_credits(user_id, amount=cost):
         return {"status": "error", "message": "Insufficient credits to generate video"}
 
     prompt = payload.get("prompt", "")
@@ -160,7 +166,7 @@ async def generate_video(user_id: str, payload: dict, *, developer_mode: bool = 
         # Bug 1: upstream 429 persisted after bounded retries. Refund and surface
         # an HONEST failure (http_status in {429, 503}) — never a 200-with-no-output.
         try:
-            credit_repo.add_credits(user_id, amount=5)
+            credit_repo.add_credits(user_id, amount=cost)
         except Exception:
             pass
         return {
@@ -170,14 +176,14 @@ async def generate_video(user_id: str, payload: dict, *, developer_mode: bool = 
         }
     except Exception as exc:
         try:
-            credit_repo.add_credits(user_id, amount=5)
+            credit_repo.add_credits(user_id, amount=cost)
         except Exception:
             pass
         return {"status": "error", "message": f"Video generation failed: {exc}"}
 
     if generated.get("status") == "error":
         try:
-            credit_repo.add_credits(user_id, amount=5)
+            credit_repo.add_credits(user_id, amount=cost)
         except Exception:
             pass
         return {
@@ -226,6 +232,7 @@ async def generate_long_form_video(
     base_prompt: str,
     duration_seconds: int = 180,
     style: str = "cinematic",
+    policy_revision: str | None = None,
 ) -> dict:
     """
     Generate a long-form video (3 minutes) by batch-generating and stitching clips.
@@ -238,9 +245,10 @@ async def generate_long_form_video(
     num_scenes = (duration_seconds // 8) + 1
     
     # Estimate credits needed (5 per scene + overhead)
-    credits_needed = num_scenes * 5 + 10
+    cost = authorize("promo_video", policy_revision)
+    credits_needed = num_scenes * cost + (10 if cost else 0)
     
-    if not credit_repo.deduct_credits(user_id, amount=credits_needed):
+    if credits_needed > 0 and not credit_repo.deduct_credits(user_id, amount=credits_needed):
         return {
             "status": "error",
             "message": f"Insufficient credits (need {credits_needed}, for {num_scenes} scenes)"

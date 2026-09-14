@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field
 
 
 class ImageGenerateRequest(BaseModel):
+    tool: str | None = None
+    policy_revision: str | None = None
     prompt: str = Field(..., min_length=3, max_length=500)
     negative_prompt: str | None = Field(default=None, max_length=500)
     model: str | None = None

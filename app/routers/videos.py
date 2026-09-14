@@ -14,6 +14,7 @@ router = APIRouter()
 
 class LongFormVideoRequest(BaseModel):
     """Long-form video generation request."""
+    policy_revision: str | None = None
     prompt: str
     duration_seconds: int = 180
     style: str = "cinematic"
@@ -50,4 +51,5 @@ async def videos_generate_long_form_route(
         body.prompt,
         body.duration_seconds,
         body.style,
+        policy_revision=body.policy_revision,
     )

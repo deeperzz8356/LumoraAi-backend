@@ -22,6 +22,8 @@ class CreditRepository:
             snapshot = ref.get(transaction=transaction)
             if not snapshot.exists:
                 # Initialize user with some credits if they don't exist yet
+                if amount > STARTER_CREDITS:
+                    return False
                 transaction.set(ref, {"credits": STARTER_CREDITS - amount}, merge=True)
                 return True
                 
@@ -33,6 +35,50 @@ class CreditRepository:
             
         transaction = self.db.transaction()
         return update_in_transaction(transaction, user_ref)
+
+    def charge_action(self, user_id: str, action: str, amount: int, request_id: str) -> dict | None:
+        """Atomically reserve a local operation's price exactly once."""
+        import hashlib
+        user_ref = self.collection.document(user_id)
+        receipt_ref = user_ref.collection("tool_charges").document(hashlib.sha256(request_id.encode()).hexdigest())
+
+        @firestore.transactional
+        def charge(transaction):
+            receipt = receipt_ref.get(transaction=transaction)
+            user = user_ref.get(transaction=transaction)
+            balance = (user.to_dict() or {}).get("credits", STARTER_CREDITS)
+            if receipt.exists:
+                saved = receipt.to_dict()
+                if saved["action"] != action:
+                    raise ValueError("Request ID already belongs to another action")
+                return {"status": "success", "balance": balance, "cost": saved["cost"], "request_id": request_id}
+            if balance < amount:
+                return None
+            transaction.set(user_ref, {"credits": balance - amount}, merge=True)
+            transaction.set(receipt_ref, {"action": action, "cost": amount, "refunded": False})
+            return {"status": "success", "balance": balance - amount, "cost": amount, "request_id": request_id}
+
+        return charge(self.db.transaction())
+
+    def refund_action(self, user_id: str, request_id: str) -> int:
+        """Refund only the recorded server charge; repeated failures cannot mint credits."""
+        import hashlib
+        user_ref = self.collection.document(user_id)
+        receipt_ref = user_ref.collection("tool_charges").document(hashlib.sha256(request_id.encode()).hexdigest())
+
+        @firestore.transactional
+        def refund(transaction):
+            receipt = receipt_ref.get(transaction=transaction)
+            user = user_ref.get(transaction=transaction)
+            balance = (user.to_dict() or {}).get("credits", STARTER_CREDITS)
+            if not receipt.exists or receipt.to_dict().get("refunded"):
+                return balance
+            balance += receipt.to_dict()["cost"]
+            transaction.set(user_ref, {"credits": balance}, merge=True)
+            transaction.update(receipt_ref, {"refunded": True})
+            return balance
+
+        return refund(self.db.transaction())
 
     def add_credits(self, user_id: str, amount: int = 1) -> int:
         user_ref = self.collection.document(user_id)

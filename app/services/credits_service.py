@@ -1,3 +1,4 @@
+from app.services.tool_policy import authorize, ALIASES, DEFAULT_COSTS
 from app.database.firestore_repositories.credit_repo import credit_repo
 
 
@@ -28,17 +29,20 @@ ACTION_COSTS: dict[str, int] = {
 }
 
 
-async def deduct_credits_for_action(user_id: str, action: str) -> dict:
+async def deduct_credits_for_action(user_id: str, action: str, policy_revision: str | None = None, request_id: str | None = None) -> dict:
     """Deduct the server-defined cost for a named action.
 
     Returns {"status":"success","balance":int,"cost":int} on success, or
     {"status":"error","message":...} when the action is unknown or the user has
     insufficient credits (HTTP layer maps insufficient to 402).
     """
-    cost = ACTION_COSTS.get(action)
-    if cost is None:
+    if ALIASES.get(action, action) not in DEFAULT_COSTS:
         return {"status": "error", "message": f"Unknown billable action '{action}'."}
-    if not credit_repo.deduct_credits(user_id, amount=cost):
+    cost = authorize(ALIASES.get(action, action), policy_revision)
+    if request_id:
+        result = credit_repo.charge_action(user_id, action, cost, request_id)
+        return result or {"status": "insufficient", "message": "Insufficient credits.", "cost": cost}
+    if cost > 0 and not credit_repo.deduct_credits(user_id, amount=cost):
         return {"status": "insufficient", "message": "Insufficient credits.", "cost": cost}
     balance = credit_repo.get_credits(user_id)
     return {"status": "success", "balance": balance, "cost": cost}

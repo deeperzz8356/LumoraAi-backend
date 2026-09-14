@@ -7,6 +7,8 @@ class ImageGenerateRequest(BaseModel):
 
 
 class VideoGenerateRequest(BaseModel):
+    tool: str | None = None
+    policy_revision: str | None = None
     prompt: str = Field(..., min_length=3, max_length=500)
     model: str | None = None
     duration: int = 10
