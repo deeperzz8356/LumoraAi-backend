@@ -57,7 +57,7 @@ class _FakeCreditStore:
     CONTRACT independent of Firestore.
     """
 
-    STARTER = 7
+    STARTER = 3
 
     def __init__(self):
         self.balances: dict[str, int] = {}

@@ -25,7 +25,7 @@ from app.core.rewards_config import (
     check_in_credits_for_day,
 )
 
-STARTER_CREDITS = 7
+STARTER_CREDITS = 3
 
 
 class RewardAlreadyClaimed(Exception):

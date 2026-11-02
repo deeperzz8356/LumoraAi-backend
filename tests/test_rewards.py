@@ -24,7 +24,7 @@ from app.main import app
 from app.services import rewards_service
 
 
-STARTER = 7
+STARTER = 3
 
 
 class _FakeRewardsRepo:

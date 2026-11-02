@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 
-STARTER_CREDITS = 7
+STARTER_CREDITS = 3
 
 
 def now_iso() -> str:

@@ -1,7 +1,7 @@
 from firebase_admin import firestore
 from app.core.firebase import get_firestore_client
 
-STARTER_CREDITS = 7
+STARTER_CREDITS = 3
 
 class CreditRepository:
     def __init__(self):
